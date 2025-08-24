@@ -46,20 +46,36 @@
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   <script src="https://cdn.jsdelivr.net/npm/cal-heatmap@3.2.0/dist/cal-heatmap.min.js"></script>
   <script>
-    var cal = new CalHeatmap();
-    cal.paint({
-      itemSelector: '#cal-heatmap',
-      domain: { type: 'month' },
-      subDomain: { type: 'day' },
-      data: {
-        source: {{ calendar_data | tojson }},
-        type: 'json',
-        x: 'date',
-        y: 'value'
-      },
-      date: { start: new Date('2025-01-01') },
-      range: 12,
-      scale: { color: { type: 'diverging', scheme: 'RdYlGn', domain: [0, 1] } }
+    document.addEventListener('DOMContentLoaded', function() {
+      const calendarData = {{ calendar_data | tojson }};
+      console.log('Calendar data:', calendarData);
+      
+      if (calendarData && calendarData.length > 0) {
+        var cal = new CalHeatmap();
+        cal.paint({
+          itemSelector: '#cal-heatmap',
+          domain: { type: 'month' },
+          subDomain: { type: 'day' },
+          data: {
+            source: calendarData,
+            type: 'json',
+            x: 'date',
+            y: 'value'
+          },
+          date: { start: new Date('2025-08-01') },
+          range: 6,
+          scale: { 
+            color: { 
+              type: 'threshold', 
+              scheme: 'RdYlGn', 
+              domain: [0, 1],
+              range: ['#ff4444', '#44ff44']
+            } 
+          }
+        });
+      } else {
+        document.getElementById('cal-heatmap').innerHTML = '<div class="alert alert-info">No calendar data available yet. Attend some classes to see your attendance calendar!</div>';
+      }
     });
   </script>
   
