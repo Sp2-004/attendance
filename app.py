@@ -117,20 +117,43 @@ def calculate_attendance_percentage(rows):
             total_present += present_count
             total_absent += absent_count
 
-            date_match = re.search(r'(\d{2}\s[A-Za-z]{3},\s\d{4}|\d{2}-\d{2}-\d{4})', text)
+            # Enhanced date matching for various formats
+            date_match = re.search(r'(\d{1,2}\s[A-Za-z]{3},?\s\d{4}|\d{1,2}[-/]\d{1,2}[-/]\d{4}|\d{1,2}\s[A-Za-z]{3})', text)
             if date_match:
-                date_str = date_match.group(1).replace(" ", "-").replace(",", "")
-                if not re.match(r'^\d{2}-\d{2}-\d{4}$', date_str):
+                date_str = date_match.group(1).strip()
+                
+                # Convert various date formats to DD-MM-YYYY
+                try:
+                    if ',' in date_str:
+                        # Format: "20 Aug, 2025" or "20 Aug,2025"
+                        date_str = date_str.replace(',', '').strip()
+                        dt = datetime.strptime(date_str, "%d %b %Y")
+                    elif re.match(r'\d{1,2}\s[A-Za-z]{3}\s\d{4}', date_str):
+                        # Format: "20 Aug 2025"
+                        dt = datetime.strptime(date_str, "%d %b %Y")
+                    elif re.match(r'\d{1,2}\s[A-Za-z]{3}', date_str):
+                        # Format: "20 Aug" (assume current year)
+                        dt = datetime.strptime(f"{date_str} 2025", "%d %b %Y")
+                    elif re.match(r'\d{1,2}[-/]\d{1,2}[-/]\d{4}', date_str):
+                        # Format: "20-08-2025" or "20/08/2025"
+                        date_str = date_str.replace('/', '-')
+                        dt = datetime.strptime(date_str, "%d-%m-%Y")
+                    else:
+                        continue
+                    
+                    date_key = dt.strftime("%d-%m-%Y")
+                except (ValueError, AttributeError):
                     continue
-                if date_str not in date_attendance:
-                    date_attendance[date_str] = {'present': 0, 'absent': 0}
-                date_attendance[date_str]['present'] += present_count
-                date_attendance[date_str]['absent'] += absent_count
+                
+                if date_key not in date_attendance:
+                    date_attendance[date_key] = {'present': 0, 'absent': 0}
+                date_attendance[date_key]['present'] += present_count
+                date_attendance[date_key]['absent'] += absent_count
 
-                if date_str not in per_course_date_attendance[current_course]:
-                    per_course_date_attendance[current_course][date_str] = {'present': 0, 'absent': 0}
-                per_course_date_attendance[current_course][date_str]['present'] += present_count
-                per_course_date_attendance[current_course][date_str]['absent'] += absent_count
+                if date_key not in per_course_date_attendance[current_course]:
+                    per_course_date_attendance[current_course][date_key] = {'present': 0, 'absent': 0}
+                per_course_date_attendance[current_course][date_key]['present'] += present_count
+                per_course_date_attendance[current_course][date_key]['absent'] += absent_count
 
     for sub_key, sub in result["subjects"].items():
         total = sub["present"] + sub["absent"]
@@ -158,8 +181,13 @@ def calculate_attendance_percentage(rows):
     result["date_attendance"] = date_attendance
     result["per_course_date_attendance"] = per_course_date_attendance
 
+    # Calculate streak and other date-based metrics
     if date_attendance:
-        dates = sorted(date_attendance.keys(), key=lambda x: datetime.strptime(x, "%d-%m-%Y"))
+        try:
+            dates = sorted(date_attendance.keys(), key=lambda x: datetime.strptime(x, "%d-%m-%Y"))
+        except ValueError:
+            dates = list(date_attendance.keys())
+            
         streak = 0
         for d in reversed(dates):
             if date_attendance[d]['present'] > 0:
@@ -191,13 +219,21 @@ def dashboard():
 
     calendar_data = []
     date_attendance = data.get('date_attendance', {})
-    for d in date_attendance:
+    
+    # Debug: Print date_attendance to see what we have
+    print("DEBUG: date_attendance =", date_attendance)
+    
+    for date_key in date_attendance:
         try:
-            dt = datetime.strptime(d, "%d-%m-%Y")
-            value = 1 if date_attendance[d]['present'] > 0 else 0
+            dt = datetime.strptime(date_key, "%d-%m-%Y")
+            value = 1 if date_attendance[date_key]['present'] > 0 else 0
             calendar_data.append({'date': dt.strftime("%Y-%m-%d"), 'value': value})
         except ValueError:
-            pass
+            print(f"DEBUG: Failed to parse date: {date_key}")
+            continue
+    
+    # Debug: Print calendar_data to see what we're sending to template
+    print("DEBUG: calendar_data =", calendar_data)
 
     table_data = []
     for i, (code, sub) in enumerate(data["subjects"].items(), start=1):

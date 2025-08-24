@@ -51,30 +51,35 @@
       console.log('Calendar data:', calendarData);
       
       if (calendarData && calendarData.length > 0) {
-        var cal = new CalHeatmap();
-        cal.paint({
-          itemSelector: '#cal-heatmap',
-          domain: { type: 'month' },
-          subDomain: { type: 'day' },
-          data: {
-            source: calendarData,
-            type: 'json',
-            x: 'date',
-            y: 'value'
-          },
-          date: { start: new Date('2025-08-01') },
-          range: 6,
-          scale: { 
-            color: { 
-              type: 'threshold', 
-              scheme: 'RdYlGn', 
-              domain: [0, 1],
-              range: ['#ff4444', '#44ff44']
-            } 
-          }
-        });
+        try {
+          var cal = new CalHeatmap();
+          cal.paint({
+            itemSelector: '#cal-heatmap',
+            domain: { type: 'month' },
+            subDomain: { type: 'day' },
+            data: {
+              source: calendarData,
+              type: 'json',
+              x: 'date',
+              y: 'value'
+            },
+            date: { start: new Date('2025-08-01') },
+            range: 6,
+            scale: { 
+              color: { 
+                type: 'threshold', 
+                scheme: 'RdYlGn', 
+                domain: [0, 1],
+                range: ['#ff4444', '#44ff44']
+              } 
+            }
+          });
+        } catch (error) {
+          console.error('Calendar rendering error:', error);
+          document.getElementById('cal-heatmap').innerHTML = '<div class="alert alert-warning">Calendar could not be rendered. Error: ' + error.message + '</div>';
+        }
       } else {
-        document.getElementById('cal-heatmap').innerHTML = '<div class="alert alert-info">No calendar data available yet. Attend some classes to see your attendance calendar!</div>';
+        document.getElementById('cal-heatmap').innerHTML = '<div class="alert alert-info">No calendar data available yet. This might be due to date parsing issues. Check the console for details.</div>';
       }
     });
   </script>
