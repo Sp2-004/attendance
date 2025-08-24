@@ -4,6 +4,43 @@
   <h1>📊 Dashboard</h1>
   <h2>Attendance Percentage: {{ data.overall.percentage }}%</h2>
   <h3>Current Streak: {{ data.streak }} days</h3>
+  
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <h4 class="text-primary">{{ data.overall.present }}</h4>
+          <p class="card-text">Classes Attended</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <h4 class="text-danger">{{ data.overall.absent }}</h4>
+          <p class="card-text">Classes Missed</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <h4 class="text-success">{{ data.streak }}</h4>
+          <p class="card-text">Day Streak</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <h4 class="text-info">{{ data.overall.safe_bunk_periods }}</h4>
+          <p class="card-text">Safe Bunks</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <h3>📅 Attendance Calendar</h3>
   <div id="cal-heatmap"></div>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cal-heatmap@3.2.0/dist/cal-heatmap.css" />
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
@@ -25,11 +62,16 @@
       scale: { color: { type: 'diverging', scheme: 'RdYlGn', domain: [0, 1] } }
     });
   </script>
+  
+  <h3 class="mt-4">📚 Subject-wise Attendance</h3>
   {{ table_html | safe }}
+  
   <div class="mt-4">
     <a href="/b_safe" class="btn btn-primary">B-Safe</a>
     <a href="/lab" class="btn btn-primary">Lab</a>
+    <a href="/profile" class="btn btn-secondary">Profile</a>
   </div>
+  
   {% if data.overall.percentage < 75 %}
     {% set required = (3 * data.overall.absent - data.overall.present) %}
     <div class="alert alert-warning mt-4">
@@ -40,5 +82,15 @@
         🎉 You are already eligible. Just maintain your attendance!
       {% endif %}
     </div>
+  {% endif %}
+  
+  {% if data.overall.percentage >= 90 %}
+  <div class="alert alert-success mt-4">
+    🎉 <strong>Excellent Attendance!</strong> You're doing great with {{ data.overall.percentage }}% attendance.
+  </div>
+  {% elif data.overall.percentage >= 85 %}
+  <div class="alert alert-info mt-4">
+    👍 <strong>Good Attendance!</strong> Keep maintaining your {{ data.overall.percentage }}% attendance rate.
+  </div>
   {% endif %}
 {% endblock %}

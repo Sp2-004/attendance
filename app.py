@@ -234,11 +234,13 @@ def course(code):
 
 @app.route("/lab", methods=["GET"])
 def lab():
-    return "Lab page coming soon"
+    data = session.get('attendance_data')
+    return render_template("lab.html", data=data)
 
 @app.route("/profile", methods=["GET"])
 def profile():
-    return "Profile page"
+    data = session.get('attendance_data')
+    return render_template("profile.html", data=data)
 
 @app.route("/ping", methods=["GET"])
 def ping():
