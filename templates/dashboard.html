@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+  <h1>📊 Dashboard</h1>
+  <h2>Attendance Percentage: {{ data.overall.percentage }}%</h2>
+  <h3>Current Streak: {{ data.streak }} days</h3>
+  <div id="cal-heatmap"></div>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cal-heatmap@3.2.0/dist/cal-heatmap.css" />
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cal-heatmap@3.2.0/dist/cal-heatmap.min.js"></script>
+  <script>
+    var cal = new CalHeatmap();
+    cal.paint({
+      itemSelector: '#cal-heatmap',
+      domain: { type: 'month' },
+      subDomain: { type: 'day' },
+      data: {
+        source: {{ calendar_data | tojson }},
+        type: 'json',
+        x: 'date',
+        y: 'value'
+      },
+      date: { start: new Date('2025-01-01') },
+      range: 12,
+      scale: { color: { type: 'diverging', scheme: 'RdYlGn', domain: [0, 1] } }
+    });
+  </script>
+  {{ table_html | safe }}
+  <div class="mt-4">
+    <a href="/b_safe" class="btn btn-primary">B-Safe</a>
+    <a href="/lab" class="btn btn-primary">Lab</a>
+  </div>
+  {% if data.overall.percentage < 75 %}
+    {% set required = (3 * data.overall.absent - data.overall.present) %}
+    <div class="alert alert-warning mt-4">
+      ⚠️ Warning: Your attendance is below 75%!
+      {% if required > 0 %}
+        📅 You need to attend at least {{ required }} more classes consecutively to reach 75% attendance.
+      {% else %}
+        🎉 You are already eligible. Just maintain your attendance!
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}

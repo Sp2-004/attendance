@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Course {{ code }}{% endblock %}
+{% block content %}
+  <h1>Course {{ code }} - {{ sub.name }}</h1>
+  <h2>Current Percentage: {{ sub.percentage }}%</h2>
+  <h3>Safe Bunk Periods: {{ sub.safe_bunk_periods }}</h3>
+  <form method="get">
+    <div class="mb-3">
+      <label for="bunk" class="form-label">Number of periods to bunk</label>
+      <input type="number" class="form-control w-25" id="bunk" name="bunk" value="{{ bunk }}">
+    </div>
+    <button type="submit" class="btn btn-primary">Calculate</button>
+  </form>
+  <h4>Projected Percentage: {{ projected }}%</h4>
+{% endblock %}
