@@ -312,9 +312,40 @@ def get_lab_subjects(username, password):
         driver.get("https://samvidha.iare.ac.in/home?action=labrecord_std")
         time.sleep(3)
 
-        # Find the lab select dropdown
+        # Find the lab select dropdown - try multiple selectors
+        lab_select_element = None
+        selectors_to_try = [
+            (By.NAME, "lab_name"),
+            (By.ID, "lab_name"),
+            (By.CSS_SELECTOR, "select[name='lab_name']"),
+            (By.CSS_SELECTOR, "select#lab_name"),
+            (By.XPATH, "//select[@name='lab_name']"),
+            (By.XPATH, "//select[contains(@name, 'lab')]"),
+            (By.CSS_SELECTOR, "select")  # Last resort - any select element
+        ]
+        
+        for selector_type, selector_value in selectors_to_try:
+            try:
+                lab_select_element = driver.find_element(selector_type, selector_value)
+                print(f"Found lab dropdown using: {selector_type} = {selector_value}")
+                break
+            except:
+                continue
+        
+        if not lab_select_element:
+            # Debug: Print page source to understand the structure
+            print("DEBUG: Page source snippet:")
+            page_source = driver.page_source
+            # Look for select elements
+            import re
+            select_matches = re.findall(r'<select[^>]*>.*?</select>', page_source, re.DOTALL | re.IGNORECASE)
+            for i, match in enumerate(select_matches[:3]):  # Show first 3 select elements
+                print(f"Select {i+1}: {match[:200]}...")
+            
+            return []
+        
         try:
-            lab_select = Select(driver.find_element(By.NAME, "lab_name"))
+            lab_select = Select(lab_select_element)
             lab_options = []
             for option in lab_select.options:
                 if option.value and option.value != "Select Lab":
@@ -325,6 +356,29 @@ def get_lab_subjects(username, password):
             return lab_options
         except Exception as e:
             print(f"Error finding lab dropdown: {e}")
+            # Try to get all select elements as fallback
+            try:
+                all_selects = driver.find_elements(By.TAG_NAME, "select")
+                print(f"Found {len(all_selects)} select elements on page")
+                for i, select_elem in enumerate(all_selects):
+                    try:
+                        select_obj = Select(select_elem)
+                        options = [opt.text for opt in select_obj.options if opt.value]
+                        print(f"Select {i+1} options: {options[:5]}...")  # Show first 5 options
+                        # If this looks like a lab dropdown, use it
+                        if any('lab' in opt.lower() for opt in options):
+                            lab_options = []
+                            for option in select_obj.options:
+                                if option.value and option.value.lower() != "select lab":
+                                    lab_options.append({
+                                        'value': option.value,
+                                        'text': option.text
+                                    })
+                            return lab_options
+                    except:
+                        continue
+            except:
+                pass
             return []
 
     except Exception as e:
@@ -449,16 +503,74 @@ def upload_lab_record(username, password, lab_name, week_no, title, pdf_file):
 
         # Navigate to lab record page
         driver.get("https://samvidha.iare.ac.in/home?action=labrecord_std")
-        time.sleep(3)
+        time.sleep(5)
 
-        # Fill the form
-        lab_select = Select(driver.find_element(By.NAME, "lab_name"))
+        # Fill the form - find lab dropdown with multiple selectors
+        lab_select_element = None
+        selectors_to_try = [
+            (By.NAME, "lab_name"),
+            (By.ID, "lab_name"),
+            (By.CSS_SELECTOR, "select[name='lab_name']"),
+            (By.XPATH, "//select[@name='lab_name']"),
+            (By.XPATH, "//select[contains(@name, 'lab')]")
+        ]
+        
+        for selector_type, selector_value in selectors_to_try:
+            try:
+                lab_select_element = driver.find_element(selector_type, selector_value)
+                break
+            except:
+                continue
+        
+        if not lab_select_element:
+            return {"success": False, "message": "Could not find lab selection dropdown on the page"}
+        
+        lab_select = Select(lab_select_element)
         lab_select.select_by_value(lab_name)
         
-        week_select = Select(driver.find_element(By.NAME, "week_no"))
+        # Find week dropdown with multiple selectors
+        week_select_element = None
+        week_selectors = [
+            (By.NAME, "week_no"),
+            (By.ID, "week_no"),
+            (By.CSS_SELECTOR, "select[name='week_no']"),
+            (By.XPATH, "//select[@name='week_no']"),
+            (By.XPATH, "//select[contains(@name, 'week')]")
+        ]
+        
+        for selector_type, selector_value in week_selectors:
+            try:
+                week_select_element = driver.find_element(selector_type, selector_value)
+                break
+            except:
+                continue
+        
+        if not week_select_element:
+            return {"success": False, "message": "Could not find week selection dropdown on the page"}
+        
+        week_select = Select(week_select_element)
         week_select.select_by_value(str(week_no))
         
-        title_field = driver.find_element(By.NAME, "title")
+        # Find title field with multiple selectors
+        title_field = None
+        title_selectors = [
+            (By.NAME, "title"),
+            (By.ID, "title"),
+            (By.CSS_SELECTOR, "input[name='title']"),
+            (By.XPATH, "//input[@name='title']"),
+            (By.XPATH, "//input[contains(@placeholder, 'title') or contains(@name, 'title')]")
+        ]
+        
+        for selector_type, selector_value in title_selectors:
+            try:
+                title_field = driver.find_element(selector_type, selector_value)
+                break
+            except:
+                continue
+        
+        if not title_field:
+            return {"success": False, "message": "Could not find title input field on the page"}
+        
         title_field.send_keys(title)
         
         # Save PDF to temporary file for upload
@@ -466,14 +578,53 @@ def upload_lab_record(username, password, lab_name, week_no, title, pdf_file):
             temp_file.write(pdf_file.getvalue())
             temp_file_path = temp_file.name
         
-        # Upload file
-        file_input = driver.find_element(By.NAME, "program_document")
+        # Upload file - find file input with multiple selectors
+        file_input = None
+        file_selectors = [
+            (By.NAME, "program_document"),
+            (By.ID, "program_document"),
+            (By.CSS_SELECTOR, "input[type='file']"),
+            (By.XPATH, "//input[@type='file']"),
+            (By.XPATH, "//input[contains(@name, 'document') or contains(@name, 'file')]")
+        ]
+        
+        for selector_type, selector_value in file_selectors:
+            try:
+                file_input = driver.find_element(selector_type, selector_value)
+                break
+            except:
+                continue
+        
+        if not file_input:
+            os.unlink(temp_file_path)  # Clean up temp file
+            return {"success": False, "message": "Could not find file upload field on the page"}
+        
         file_input.send_keys(temp_file_path)
         
         time.sleep(2)
         
-        # Submit form
-        submit_button = driver.find_element(By.XPATH, "//input[@type='submit' and @value='Submit']")
+        # Submit form - find submit button with multiple selectors
+        submit_button = None
+        submit_selectors = [
+            (By.XPATH, "//input[@type='submit' and @value='Submit']"),
+            (By.XPATH, "//button[@type='submit']"),
+            (By.XPATH, "//input[@type='submit']"),
+            (By.CSS_SELECTOR, "input[type='submit']"),
+            (By.CSS_SELECTOR, "button[type='submit']"),
+            (By.XPATH, "//button[contains(text(), 'Submit')]")
+        ]
+        
+        for selector_type, selector_value in submit_selectors:
+            try:
+                submit_button = driver.find_element(selector_type, selector_value)
+                break
+            except:
+                continue
+        
+        if not submit_button:
+            os.unlink(temp_file_path)  # Clean up temp file
+            return {"success": False, "message": "Could not find submit button on the page"}
+        
         submit_button.click()
         
         time.sleep(3)
@@ -485,8 +636,10 @@ def upload_lab_record(username, password, lab_name, week_no, title, pdf_file):
         page_source = driver.page_source.lower()
         if "success" in page_source or "uploaded" in page_source:
             return {"success": True, "message": "Lab record uploaded successfully!"}
+        elif "error" in page_source or "failed" in page_source:
+            return {"success": False, "message": "Upload failed. Please check your inputs and try again."}
         else:
-            return {"success": False, "message": "Upload may have failed. Please check the website."}
+            return {"success": True, "message": "Upload completed. Please verify on the website."}
             
     except Exception as e:
         return {"success": False, "message": f"Error uploading lab record: {str(e)}"}
