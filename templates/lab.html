@@ -5,8 +5,70 @@
     <h1>🧪 Lab Attendance Tracker</h1>
     <p class="lead">Track your laboratory session attendance and performance</p>
     
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    
+    {% if success %}
+    <div class="alert alert-success">{{ success }}</div>
+    {% endif %}
+    
     <div class="row">
       <div class="col-md-8">
+        <!-- Lab Record Upload Section -->
+        <div class="card mb-4">
+          <div class="card-header">
+            <h3>📤 Upload Lab Record</h3>
+          </div>
+          <div class="card-body">
+            <form method="post" enctype="multipart/form-data" id="labUploadForm">
+              <div class="row">
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label for="lab_name" class="form-label">Select Lab Subject:</label>
+                    <select class="form-select" id="lab_name" name="lab_name" required>
+                      <option value="">Loading lab subjects...</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label for="week_no" class="form-label">Week Number:</label>
+                    <select class="form-select" id="week_no" name="week_no" required>
+                      <option value="">Select Week</option>
+                      {% for i in range(1, 16) %}
+                      <option value="{{ i }}">Week {{ i }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="mb-3">
+                <label for="title" class="form-label">Title of Experiment:</label>
+                <input type="text" class="form-control" id="title" name="title" required 
+                       placeholder="Enter the experiment title">
+              </div>
+              
+              <div class="mb-3">
+                <label for="images" class="form-label">Select Images:</label>
+                <input type="file" class="form-control" id="images" name="images" 
+                       multiple accept="image/*" required>
+                <div class="form-text">Select multiple images of your lab record. They will be compressed into a PDF.</div>
+              </div>
+              
+              <div class="mb-3">
+                <div id="imagePreview" class="row"></div>
+              </div>
+              
+              <button type="submit" class="btn btn-primary" id="uploadBtn">
+                <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+                Upload Lab Record
+              </button>
+            </form>
+          </div>
+        </div>
+        
         <div class="card mb-4">
           <div class="card-header">
             <h3>Lab Sessions Overview</h3>
@@ -151,4 +213,72 @@
       </div>
     </div>
   </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Load lab subjects
+      fetch('/get_lab_subjects', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        const labSelect = document.getElementById('lab_name');
+        labSelect.innerHTML = '<option value="">Select Lab Subject</option>';
+        
+        if (data.subjects && data.subjects.length > 0) {
+          data.subjects.forEach(subject => {
+            const option = document.createElement('option');
+            option.value = subject.value;
+            option.textContent = subject.text;
+            labSelect.appendChild(option);
+          });
+        } else {
+          labSelect.innerHTML = '<option value="">No lab subjects found</option>';
+        }
+      })
+      .catch(error => {
+        console.error('Error loading lab subjects:', error);
+        document.getElementById('lab_name').innerHTML = '<option value="">Error loading subjects</option>';
+      });
+      
+      // Image preview functionality
+      document.getElementById('images').addEventListener('change', function(e) {
+        const preview = document.getElementById('imagePreview');
+        preview.innerHTML = '';
+        
+        Array.from(e.target.files).forEach((file, index) => {
+          if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+              const col = document.createElement('div');
+              col.className = 'col-md-3 mb-2';
+              col.innerHTML = `
+                <div class="card">
+                  <img src="${e.target.result}" class="card-img-top" style="height: 150px; object-fit: cover;">
+                  <div class="card-body p-2">
+                    <small class="text-muted">${file.name}</small>
+                  </div>
+                </div>
+              `;
+              preview.appendChild(col);
+            };
+            reader.readAsDataURL(file);
+          }
+        });
+      });
+      
+      // Form submission with loading state
+      document.getElementById('labUploadForm').addEventListener('submit', function(e) {
+        const uploadBtn = document.getElementById('uploadBtn');
+        const spinner = uploadBtn.querySelector('.spinner-border');
+        
+        uploadBtn.disabled = true;
+        spinner.classList.remove('d-none');
+        uploadBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Uploading...';
+      });
+    });
+  </script>
 {% endblock %}

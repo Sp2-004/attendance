@@ -2,3 +2,5 @@ flask
 selenium
 webdriver-manager
 tabulate
+Pillow
+reportlab

@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, session, redirect, url_for
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import Select
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
@@ -9,6 +10,12 @@ import time
 import re
 from datetime import datetime
 import os
+from PIL import Image
+import io
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter, A4
+import tempfile
+from werkzeug.utils import secure_filename
 
 
 
@@ -207,6 +214,36 @@ def login_page():
 
 @app.route("/dashboard", methods=["POST"])
 def dashboard():
+    if request.method == "GET":
+        # Handle GET requests (navigation from other pages)
+        data = session.get('attendance_data')
+        if not data:
+            return redirect("/")
+        
+        calendar_data = []
+        date_attendance = data.get('date_attendance', {})
+        
+        for date_key in date_attendance:
+            try:
+                dt = datetime.strptime(date_key, "%d-%m-%Y")
+                value = 1 if date_attendance[date_key]['present'] > 0 else 0
+                calendar_data.append({'date': dt.strftime("%Y-%m-%d"), 'value': value})
+            except ValueError:
+                continue
+        
+        table_data = []
+        for i, (code, sub) in enumerate(data["subjects"].items(), start=1):
+            table_data.append([i, code, sub["name"], sub["present"], sub["absent"], f"{sub['percentage']}%"])
+
+        table_html = tabulate(
+            table_data,
+            headers=["S.No", "Course Code", "Course Name", "Present", "Absent", "Percentage"],
+            tablefmt="html"
+        )
+        
+        return render_template("dashboard.html", data=data, calendar_data=calendar_data, table_html=table_html)
+    
+    # Handle POST requests (login)
     username = request.form["username"]
     password = request.form["password"]
 
@@ -216,6 +253,8 @@ def dashboard():
         return render_template("login.html", error=data["error"])
 
     session['attendance_data'] = data
+    session['username'] = username
+    session['password'] = password
 
     calendar_data = []
     date_attendance = data.get('date_attendance', {})
@@ -247,6 +286,213 @@ def dashboard():
 
     return render_template("dashboard.html", data=data, calendar_data=calendar_data, table_html=table_html)
 
+def get_lab_subjects(username, password):
+    """Fetch lab subjects from the website"""
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=options
+    )
+
+    try:
+        # Login
+        driver.get(COLLEGE_LOGIN_URL)
+        time.sleep(2)
+        driver.find_element(By.ID, "txt_uname").send_keys(username)
+        driver.find_element(By.ID, "txt_pwd").send_keys(password)
+        driver.find_element(By.ID, "but_submit").click()
+        time.sleep(3)
+
+        # Navigate to lab record page
+        driver.get("https://samvidha.iare.ac.in/home?action=labrecord_std")
+        time.sleep(3)
+
+        # Find the lab select dropdown
+        try:
+            lab_select = Select(driver.find_element(By.NAME, "lab_name"))
+            lab_options = []
+            for option in lab_select.options:
+                if option.value and option.value != "Select Lab":
+                    lab_options.append({
+                        'value': option.value,
+                        'text': option.text
+                    })
+            return lab_options
+        except Exception as e:
+            print(f"Error finding lab dropdown: {e}")
+            return []
+
+    except Exception as e:
+        print(f"Error fetching lab subjects: {e}")
+        return []
+    finally:
+        driver.quit()
+
+def compress_images_to_pdf(image_files, max_size_mb=1):
+    """Convert and compress images to PDF under specified size"""
+    pdf_buffer = io.BytesIO()
+    
+    # Create PDF
+    c = canvas.Canvas(pdf_buffer, pagesize=A4)
+    width, height = A4
+    
+    for image_file in image_files:
+        try:
+            # Open and process image
+            img = Image.open(image_file)
+            
+            # Convert to RGB if necessary
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Calculate scaling to fit page
+            img_width, img_height = img.size
+            scale_w = (width - 40) / img_width  # 20pt margin on each side
+            scale_h = (height - 40) / img_height  # 20pt margin on each side
+            scale = min(scale_w, scale_h, 1.0)  # Don't upscale
+            
+            new_width = img_width * scale
+            new_height = img_height * scale
+            
+            # Resize image
+            img = img.resize((int(img_width * scale), int(img_height * scale)), Image.Resampling.LANCZOS)
+            
+            # Save to temporary file
+            temp_img = io.BytesIO()
+            img.save(temp_img, format='JPEG', quality=85, optimize=True)
+            temp_img.seek(0)
+            
+            # Add to PDF
+            x = (width - new_width) / 2
+            y = (height - new_height) / 2
+            c.drawInlineImage(temp_img, x, y, width=new_width, height=new_height)
+            c.showPage()
+            
+        except Exception as e:
+            print(f"Error processing image: {e}")
+            continue
+    
+    c.save()
+    pdf_buffer.seek(0)
+    
+    # Check size and compress if needed
+    pdf_size = len(pdf_buffer.getvalue())
+    max_size_bytes = max_size_mb * 1024 * 1024
+    
+    if pdf_size > max_size_bytes:
+        # Reduce quality and try again
+        pdf_buffer = io.BytesIO()
+        c = canvas.Canvas(pdf_buffer, pagesize=A4)
+        
+        for image_file in image_files:
+            try:
+                image_file.seek(0)  # Reset file pointer
+                img = Image.open(image_file)
+                
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # More aggressive scaling
+                img_width, img_height = img.size
+                scale_w = (width - 40) / img_width
+                scale_h = (height - 40) / img_height
+                scale = min(scale_w, scale_h, 0.8)  # Reduce to 80% max
+                
+                new_width = img_width * scale
+                new_height = img_height * scale
+                
+                img = img.resize((int(img_width * scale), int(img_height * scale)), Image.Resampling.LANCZOS)
+                
+                temp_img = io.BytesIO()
+                img.save(temp_img, format='JPEG', quality=60, optimize=True)  # Lower quality
+                temp_img.seek(0)
+                
+                x = (width - new_width) / 2
+                y = (height - new_height) / 2
+                c.drawInlineImage(temp_img, x, y, width=new_width, height=new_height)
+                c.showPage()
+                
+            except Exception as e:
+                continue
+        
+        c.save()
+        pdf_buffer.seek(0)
+    
+    return pdf_buffer
+
+def upload_lab_record(username, password, lab_name, week_no, title, pdf_file):
+    """Upload lab record to the website"""
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=options
+    )
+
+    try:
+        # Login
+        driver.get(COLLEGE_LOGIN_URL)
+        time.sleep(2)
+        driver.find_element(By.ID, "txt_uname").send_keys(username)
+        driver.find_element(By.ID, "txt_pwd").send_keys(password)
+        driver.find_element(By.ID, "but_submit").click()
+        time.sleep(3)
+
+        # Navigate to lab record page
+        driver.get("https://samvidha.iare.ac.in/home?action=labrecord_std")
+        time.sleep(3)
+
+        # Fill the form
+        lab_select = Select(driver.find_element(By.NAME, "lab_name"))
+        lab_select.select_by_value(lab_name)
+        
+        week_select = Select(driver.find_element(By.NAME, "week_no"))
+        week_select.select_by_value(str(week_no))
+        
+        title_field = driver.find_element(By.NAME, "title")
+        title_field.send_keys(title)
+        
+        # Save PDF to temporary file for upload
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
+            temp_file.write(pdf_file.getvalue())
+            temp_file_path = temp_file.name
+        
+        # Upload file
+        file_input = driver.find_element(By.NAME, "program_document")
+        file_input.send_keys(temp_file_path)
+        
+        time.sleep(2)
+        
+        # Submit form
+        submit_button = driver.find_element(By.XPATH, "//input[@type='submit' and @value='Submit']")
+        submit_button.click()
+        
+        time.sleep(3)
+        
+        # Clean up temp file
+        os.unlink(temp_file_path)
+        
+        # Check for success message or error
+        page_source = driver.page_source.lower()
+        if "success" in page_source or "uploaded" in page_source:
+            return {"success": True, "message": "Lab record uploaded successfully!"}
+        else:
+            return {"success": False, "message": "Upload may have failed. Please check the website."}
+            
+    except Exception as e:
+        return {"success": False, "message": f"Error uploading lab record: {str(e)}"}
+    finally:
+        driver.quit()
+
 @app.route("/b_safe", methods=["GET"])
 def b_safe():
     data = session.get('attendance_data')
@@ -268,10 +514,59 @@ def course(code):
     projected = round((sub["present"] / total * 100) if total > 0 else 0, 2)
     return render_template("course.html", sub=sub, code=code, bunk=bunk, projected=projected)
 
-@app.route("/lab", methods=["GET"])
+@app.route("/lab", methods=["GET", "POST"])
 def lab():
     data = session.get('attendance_data')
+    
+    if request.method == "POST":
+        # Handle lab record upload
+        try:
+            lab_name = request.form.get('lab_name')
+            week_no = request.form.get('week_no')
+            title = request.form.get('title')
+            images = request.files.getlist('images')
+            
+            if not all([lab_name, week_no, title]) or not images:
+                return render_template("lab.html", data=data, error="Please fill all fields and select images")
+            
+            # Get credentials from session or request
+            username = session.get('username')
+            password = session.get('password')
+            
+            if not username or not password:
+                return render_template("lab.html", data=data, error="Session expired. Please login again.")
+            
+            # Compress images to PDF
+            pdf_file = compress_images_to_pdf(images)
+            
+            # Upload to website
+            result = upload_lab_record(username, password, lab_name, week_no, title, pdf_file)
+            
+            if result["success"]:
+                return render_template("lab.html", data=data, success=result["message"])
+            else:
+                return render_template("lab.html", data=data, error=result["message"])
+                
+        except Exception as e:
+            return render_template("lab.html", data=data, error=f"Error processing upload: {str(e)}")
+    
     return render_template("lab.html", data=data)
+
+@app.route("/get_lab_subjects", methods=["POST"])
+def get_lab_subjects_route():
+    """API endpoint to fetch lab subjects"""
+    try:
+        username = session.get('username')
+        password = session.get('password')
+        
+        if not username or not password:
+            return {"error": "Session expired"}, 401
+        
+        lab_subjects = get_lab_subjects(username, password)
+        return {"subjects": lab_subjects}
+        
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 @app.route("/profile", methods=["GET"])
 def profile():
